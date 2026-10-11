@@ -653,7 +653,9 @@ export class DataService {
         user_action: 'PAY_NOW',
       },
     });
-    const approvalUrl = (order.links as any[])?.find((link) => link.rel === 'approve')?.href;
+    const approvalUrl = (order.links as any[])?.find(
+      (link) => ['approve', 'payer-action'].includes(link.rel) && typeof link.href === 'string' && link.href,
+    )?.href;
     if (!approvalUrl) throw new BadRequestException('PayPal did not return an approval URL');
     return { url: String(approvalUrl), reference: String(order.id) };
   }
@@ -662,7 +664,9 @@ export class DataService {
     const clientId = process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
     if (!clientId || !clientSecret) throw new ServiceUnavailableException('PayPal is not configured');
-    const baseUrl = process.env.PAYMENT_MODE === 'production' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+    const baseUrl = String(process.env.PAYMENT_MODE || '').trim().toLowerCase() === 'production'
+      ? 'https://api-m.paypal.com'
+      : 'https://api-m.sandbox.paypal.com';
     const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
     const tokenResponse = await fetch(`${baseUrl}/v1/oauth2/token`, {
       method: 'POST',
@@ -674,7 +678,11 @@ export class DataService {
 
     const response = await fetch(`${baseUrl}${path}`, {
       method,
-      headers: { Authorization: `Bearer ${token.access_token}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const result = await response.json().catch(() => ({})) as any;
